@@ -151,14 +151,12 @@ void iree_mmt4d(TiledMatrix* acc, const TiledMatrix* lhs, const TiledMatrix* rhs
                 const float* lhs_tile = &lhs->data[(m * lhs->tile_cols + k) * TILE_M * TILE_K];
                 const float* rhs_tile = &rhs->data[(k * rhs->tile_cols + n) * TILE_K * TILE_N];
                 
-                // Prefetch next tiles
-                if (k + 1 < lhs->tile_cols) {
-                    _mm_prefetch(&lhs->data[(m * lhs->tile_cols + k + 1) * TILE_M * TILE_K], _MM_HINT_T0);
-                    _mm_prefetch(&rhs->data[((k + 1) * rhs->tile_cols + n) * TILE_K * TILE_N], _MM_HINT_T0);
-                }
+                _mm_prefetch(&lhs->data[(m * lhs->tile_cols + k + 1) * TILE_M * TILE_K], _MM_HINT_T0);
                 
                 // Call optimized tile multiplication kernel
                 matmul_tile_16x16x1_avx512(acc_tile, lhs_tile, rhs_tile, TILE_K, k > 0);
+                
+                _mm_prefetch(&rhs->data[((k + 1) * rhs->tile_cols + n) * TILE_K * TILE_N], _MM_HINT_T0);
             }
         }
     }
