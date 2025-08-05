@@ -27,7 +27,7 @@ typedef struct {
 
 // IREE-inspired tile function for AVX-512
 // This is based on iree_uk_mmt4d_tile_f32f32f32_16x16x1_x86_64_avx512_base
-static inline void matmul_tile_16x16x1_avx512(
+__attribute__((always_inline)) static inline void matmul_tile_16x16x1_avx512(
     float* __restrict__ out_tile,
     const float* __restrict__ lhs_tile,
     const float* __restrict__ rhs_tile,
@@ -136,6 +136,7 @@ void iree_mmt4d(TiledMatrix* acc, const TiledMatrix* lhs, const TiledMatrix* rhs
     assert(acc->tile_cols == rhs->tile_cols);
     
     // Triple nested loop over tiles (following IREE's pattern)
+    //#pragma omp parallel for collapse(2)
     for (int m = 0; m < lhs->tile_rows; m++) {
         for (int n = 0; n < rhs->tile_cols; n++) {
             float* acc_tile = &acc->data[(m * acc->tile_cols + n) * TILE_M * TILE_N];
@@ -164,6 +165,14 @@ void iree_mmt4d(TiledMatrix* acc, const TiledMatrix* lhs, const TiledMatrix* rhs
 
 // Standard matrix multiplication for verification
 void matmul_reference(float* C, const float* A, const float* B, int M, int N, int K) {
+    for (int i = 0; i < M; ++i) {
+        for (int k = 0; k < K; ++k) {
+            for (int j = 0; j < N; ++j) {
+                C[i * N + j] += A[i * K + k] * B[k * N + j];
+            }
+        }
+    }
+    /*
     for (int i = 0; i < M; i++) {
         for (int j = 0; j < N; j++) {
             float sum = 0.0f;
@@ -173,6 +182,7 @@ void matmul_reference(float* C, const float* A, const float* B, int M, int N, in
             C[i * N + j] = sum;
         }
     }
+    */
 }
 
 // Initialize matrix with random values
