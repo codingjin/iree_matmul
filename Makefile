@@ -2,7 +2,7 @@
 
 # Compiler and flags
 CC = clang
-CFLAGS = -O3 -march=native -mavx512f
+CFLAGS = -march=native -mavx512f -fopenmp
 
 # Source and target
 SRC = avx512_16.c
