@@ -1,6 +1,5 @@
-// IREE-inspired Matrix Multiplication Implementation for x86_64
-// Based on IREE's mmt4d microkernel optimizations
-// Compile with: clang -O3 -march=native -mavx512f avx512_16.c -o avx512_16
+// Matrix Multiplication Implementation for x86_64
+// Compile with: clang -march=native -mavx512f avx512_16.c -o avx512_16
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -11,7 +10,6 @@
 #include <math.h>
 #include <omp.h>
 
-// Tile sizes inspired by IREE's x86_64 AVX-512 implementation
 #define TILE_M 16
 #define TILE_N 16
 #define TILE_K 1
@@ -20,7 +18,7 @@
 #define RUN 10
 
 
-// Structure to hold tiled matrix data (similar to IREE's mmt4d format)
+// Structure to hold tiled matrix data
 typedef struct {
     float* data;
     int rows;
@@ -29,9 +27,8 @@ typedef struct {
     int tile_cols;
 } TiledMatrix;
 
-// This is based on iree_uk_mmt4d_tile_f32f32f32_16x16x1_x86_64_avx512_base
 __attribute__((always_inline)) static inline void matmul_tile_16x16x1_avx512(
-    float* __restrict__ out_tile,
+    __m512* acc,
     const float* __restrict__ lhs_tile,
     const float* __restrict__ rhs_tile) {
     
@@ -40,26 +37,14 @@ __attribute__((always_inline)) static inline void matmul_tile_16x16x1_avx512(
 
     _mm_prefetch((const char*)lhs_ptr, _MM_HINT_T0);
     _mm_prefetch((const char*)rhs_ptr, _MM_HINT_T0);
-    __m512 acc[16];
 
-    #pragma clang loop unroll(full)
-    for (int i = 0; i < 16; i++) {
-        acc[i] = _mm512_loadu_ps(out_tile + i * 16);
-    }
-    
     #pragma clang loop unroll(full)
     for (int i = 0; i < 16; i++) {
         acc[i] = _mm512_fmadd_ps(_mm512_loadu_ps(rhs_ptr), _mm512_set1_ps(lhs_ptr[i]), acc[i]);
     }
-
-    // Store results back to accumulator
-    #pragma clang loop unroll(full)
-    for (int i = 0; i < 16; i++) {
-        _mm512_storeu_ps(out_tile + i * 16, acc[i]);
-    }
 }
 
-// Pack matrix into tiled layout (similar to IREE's pack operation)
+// Pack matrix into tiled layout
 TiledMatrix* pack_matrix(const float* src, int rows, int cols, int tile_size_m, int tile_size_n) {
     TiledMatrix* tiled = (TiledMatrix*)malloc(sizeof(TiledMatrix));
     
@@ -116,7 +101,7 @@ void iree_mmt4d(TiledMatrix* acc, const TiledMatrix* lhs, const TiledMatrix* rhs
     assert(acc->tile_rows == lhs->tile_rows);
     assert(acc->tile_cols == rhs->tile_cols);
     
-    // Triple nested loop over tiles (following IREE's pattern)
+    // Triple nested loop over tiles
     //#pragma omp parallel for collapse(2)
     for (int m = 0; m < lhs->tile_rows; m++) {
         for (int n = 0; n < rhs->tile_cols; n++) {
@@ -127,7 +112,12 @@ void iree_mmt4d(TiledMatrix* acc, const TiledMatrix* lhs, const TiledMatrix* rhs
             
             // Initialize accumulator to zero for first K tile
             memset(acc_tile, 0, TILE_M * TILE_N * sizeof(float));
-            
+            __m512 acc[16];
+            #pragma clang loop unroll(full)
+            for (int i = 0; i < 16; i++) {
+                acc[i] = _mm512_loadu_ps(acc_tile + i * 16);
+            }
+
             for (int k = 0; k < lhs->tile_cols; k++) {
                 const float* lhs_tile = &lhs->data[(m * lhs->tile_cols + k) * TILE_M * TILE_K];
                 const float* rhs_tile = &rhs->data[(k * rhs->tile_cols + n) * TILE_K * TILE_N];
@@ -135,12 +125,15 @@ void iree_mmt4d(TiledMatrix* acc, const TiledMatrix* lhs, const TiledMatrix* rhs
                 _mm_prefetch(&lhs->data[(m * lhs->tile_cols + k + 1) * TILE_M * TILE_K], _MM_HINT_T0);
                 
                 // Call optimized tile multiplication kernel
-                matmul_tile_16x16x1_avx512(acc_tile, lhs_tile, rhs_tile);
+                matmul_tile_16x16x1_avx512(acc, lhs_tile, rhs_tile);
                 
                 _mm_prefetch(&rhs->data[((k + 1) * rhs->tile_cols + n) * TILE_K * TILE_N], _MM_HINT_T0);
             }
-            
-
+            // Store results back to accumulator
+            #pragma clang loop unroll(full)
+            for (int i = 0; i < 16; i++) {
+                _mm512_storeu_ps(acc_tile + i * 16, acc[i]);
+            }
         }
     }
 }
@@ -152,7 +145,6 @@ void iree_mmt4d_p(TiledMatrix* acc, const TiledMatrix* lhs, const TiledMatrix* r
     assert(acc->tile_rows == lhs->tile_rows);
     assert(acc->tile_cols == rhs->tile_cols);
     
-    // Triple nested loop over tiles (following IREE's pattern)
     #pragma omp parallel for collapse(2)
     for (int m = 0; m < lhs->tile_rows; m++) {
         for (int n = 0; n < rhs->tile_cols; n++) {
@@ -163,7 +155,11 @@ void iree_mmt4d_p(TiledMatrix* acc, const TiledMatrix* lhs, const TiledMatrix* r
             
             // Initialize accumulator to zero for first K tile
             memset(acc_tile, 0, TILE_M * TILE_N * sizeof(float));
-            
+            __m512 acc[16];
+            #pragma clang loop unroll(full)
+            for (int i = 0; i < 16; i++) {
+                acc[i] = _mm512_loadu_ps(acc_tile + i * 16);
+            }
             for (int k = 0; k < lhs->tile_cols; k++) {
                 const float* lhs_tile = &lhs->data[(m * lhs->tile_cols + k) * TILE_M * TILE_K];
                 const float* rhs_tile = &rhs->data[(k * rhs->tile_cols + n) * TILE_K * TILE_N];
@@ -171,9 +167,13 @@ void iree_mmt4d_p(TiledMatrix* acc, const TiledMatrix* lhs, const TiledMatrix* r
                 _mm_prefetch(&lhs->data[(m * lhs->tile_cols + k + 1) * TILE_M * TILE_K], _MM_HINT_T0);
                 
                 // Call optimized tile multiplication kernel
-                matmul_tile_16x16x1_avx512(acc_tile, lhs_tile, rhs_tile);
-                
+                matmul_tile_16x16x1_avx512(acc, lhs_tile, rhs_tile);
                 _mm_prefetch(&rhs->data[((k + 1) * rhs->tile_cols + n) * TILE_K * TILE_N], _MM_HINT_T0);
+            }
+            // Store results back to accumulator
+            #pragma clang loop unroll(full)
+            for (int i = 0; i < 16; i++) {
+                _mm512_storeu_ps(acc_tile + i * 16, acc[i]);
             }
             
 
@@ -301,6 +301,7 @@ int main(int argc, char* argv[]) {
     printf("Sequential 2 : %.2f GFLOPS\n", flops / avg_time2 / 1e9);
     printf("Sequential 3 : %.2f GFLOPS\n", flops / avg_time3 / 1e9);
 
+    
     // OpenMP mode
     for (int i = 0; i < WARMUP; ++i) {
         // Pack matrices into tiled format
