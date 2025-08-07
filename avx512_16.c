@@ -79,7 +79,7 @@ int main(int argc, char* argv[]) {
         TiledMatrix* A_tiled = pack_matrix(A, M, K, TILE_M, TILE_K);
         TiledMatrix* B_tiled = pack_matrix(B, K, N, TILE_K, TILE_N);
         TiledMatrix* C_tiled = pack_matrix(C_iree, M, N, TILE_M, TILE_N);
-        iree_mmt4d(C_tiled, A_tiled, B_tiled, K);
+        iree_mmt4d(C_tiled, A_tiled, B_tiled);
         unpack_matrix(C_iree, C_tiled, TILE_M, TILE_N);
         free(A_tiled->data);
         free(A_tiled);
