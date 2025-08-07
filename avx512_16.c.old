@@ -96,12 +96,11 @@ void unpack_matrix(float* dst, const TiledMatrix* tiled, int tile_size_m, int ti
 
 void iree_mmt4d(TiledMatrix* acc, const TiledMatrix* lhs, const TiledMatrix* rhs, int K) {
     // Ensure compatible dimensions
-    /*
     assert(lhs->tile_cols == (K + TILE_K - 1) / TILE_K);
     assert(rhs->tile_rows == (K + TILE_K - 1) / TILE_K);
     assert(acc->tile_rows == lhs->tile_rows);
     assert(acc->tile_cols == rhs->tile_cols);
-    */
+    
     // Triple nested loop over tiles
     //#pragma omp parallel for collapse(2)
     for (int m = 0; m < lhs->tile_rows; m++) {
